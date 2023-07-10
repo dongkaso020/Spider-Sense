@@ -18,7 +18,7 @@ import java.util.Set;
 
 public class SpiderSense implements ModInitializer {
     private static final float SOUND_RANGE_ENTITY = 10.0F;
-    private static final float SOUND_RANGE_ARROW = 100.0F;
+    private static final float SOUND_RANGE_ARROW = 30.0F;
     private final Map<PlayerEntity, Long> playersWithSounds = new HashMap<>();
     private final Set<Entity> detectedEntities = new HashSet<>();
 
@@ -48,8 +48,7 @@ public class SpiderSense implements ModInitializer {
     }
 
     private Set<Entity> findNearbyEntities(PlayerEntity player) {
-        Set<Entity> currentDetectedEntities = new HashSet<>();
-        player.getWorld().getOtherEntities(player, player.getBoundingBox().expand(SOUND_RANGE_ENTITY)).forEach(currentDetectedEntities::add);
+        Set<Entity> currentDetectedEntities = new HashSet<>(player.getWorld().getOtherEntities(player, player.getBoundingBox().expand(SOUND_RANGE_ENTITY)));
         player.getWorld().getOtherEntities(player, player.getBoundingBox().expand(SOUND_RANGE_ARROW)).stream().filter(entity -> entity instanceof ArrowEntity).forEach(currentDetectedEntities::add);
         return currentDetectedEntities;
     }
@@ -67,8 +66,7 @@ public class SpiderSense implements ModInitializer {
     }
 
     private boolean isEntityToBeSensed(PlayerEntity player, Entity nearbyEntity) {
-        if (nearbyEntity instanceof ArrowEntity) {
-            ArrowEntity arrow = (ArrowEntity) nearbyEntity;
+        if (nearbyEntity instanceof ArrowEntity arrow) {
             return !arrow.isOnGround() && shouldPlaySound(player) && !detectedEntities.contains(arrow);
         } else {
             return (nearbyEntity instanceof MobEntity || nearbyEntity instanceof PlayerEntity) &&
@@ -85,7 +83,7 @@ public class SpiderSense implements ModInitializer {
                     SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, SoundCategory.MASTER, 1F, 1F, false);
         } else {
             player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(),
-                    SoundEvents.BLOCK_BELL_RESONATE, SoundCategory.MASTER, 1F, 1F, false);
+                    SoundEvents.BLOCK_BELL_RESONATE, SoundCategory.MASTER, 1F, 1F, true);
         }
     }
 
