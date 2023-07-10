@@ -3,13 +3,13 @@
 	"id": "spider-sense",
 	"version": "${version}",
 	"name": "Spider-Sense",
-	"description": "This mod will make you like a hero, and give you an advantage in battle! Made by Candidness",
+	"description": "This mod detects monsters, arrows, projectiles, etc next to you! Wait, is this a cheat?",
 	"authors": [
 		"Candidness"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/dongkaso020",
+		"sources": "https://github.com/dongkaso020/Spider-Sense"
 	},
 	"license": "MIT",
 	"icon": "assets/spider-sense/icon.png",

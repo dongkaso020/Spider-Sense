@@ -1,11 +1,12 @@
 package candidness.spidersense;
+
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.projectile.ProjectileEntity;
+import net.minecraft.entity.projectile.ArrowEntity;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.Vec3d;
@@ -16,37 +17,69 @@ import java.util.Map;
 import java.util.Set;
 
 public class SpiderSense implements ModInitializer {
-    private static final float SOUND_RANGE = 10.0F;
+    private static final float SOUND_RANGE = 13.0F;
     private final Map<PlayerEntity, Long> playersWithSounds = new HashMap<>();
     private final Set<Entity> detectedEntities = new HashSet<>();
 
     @Override
     public void onInitialize() {
-        ServerTickEvents.END_SERVER_TICK.register(server -> {
-            server.getWorlds().forEach(world -> {
-                world.getPlayers().forEach(player -> {
-                    Vec3d playerPos = player.getPos();
-                    boolean soundPlayed = false;
-                    Set<Entity> currentDetectedEntities = new HashSet<>();
-                    for (Entity nearbyEntity : world.getOtherEntities(player, player.getBoundingBox().expand(SOUND_RANGE))) {
-                        if ((nearbyEntity instanceof ProjectileEntity || nearbyEntity instanceof MobEntity) &&
-                                !(nearbyEntity instanceof AnimalEntity) &&
-                                shouldPlaySound(player) && !detectedEntities.contains(nearbyEntity)) {
-                            Vec3d entitySoundPos = nearbyEntity.getPos().add(0, nearbyEntity.getStandingEyeHeight() / 2, 0);
-                            world.playSound(null, entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(), SoundEvents.BLOCK_BELL_RESONATE, SoundCategory.MASTER, 1F, 1F);
-                            soundPlayed = true;
-                            playersWithSounds.put(player, System.currentTimeMillis());
-                        }
-                        currentDetectedEntities.add(nearbyEntity);
-                        if (soundPlayed) {
-                            break;
-                        }
-                    }
-                    detectedEntities.clear();
-                    detectedEntities.addAll(currentDetectedEntities);
-                });
-            });
+        registerSoundEvents();
+    }
+
+    private void registerSoundEvents() {
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (client.world != null && client.player != null) {
+                processPlayerSenseEvents(client.player);
+            }
         });
+    }
+
+    private void processPlayerSenseEvents(PlayerEntity player) {
+        Set<Entity> currentDetectedEntities = findNearbyEntities(player);
+        boolean soundPlayed = playSoundForDetectedEntities(player, currentDetectedEntities);
+
+        if (soundPlayed) {
+            playersWithSounds.put(player, System.currentTimeMillis());
+        }
+
+        detectedEntities.clear();
+        detectedEntities.addAll(currentDetectedEntities);
+    }
+
+    private Set<Entity> findNearbyEntities(PlayerEntity player) {
+        Set<Entity> currentDetectedEntities = new HashSet<>();
+        player.getWorld().getOtherEntities(player, player.getBoundingBox().expand(SOUND_RANGE)).forEach(currentDetectedEntities::add);
+        return currentDetectedEntities;
+    }
+
+    private boolean playSoundForDetectedEntities(PlayerEntity player, Set<Entity> currentDetectedEntities) {
+        boolean soundPlayed = false;
+        for (Entity nearbyEntity : currentDetectedEntities) {
+            if (isEntityToBeSensed(player, nearbyEntity)) {
+                playSoundAtEntityPosition(player, nearbyEntity);
+                soundPlayed = true;
+                break;
+            }
+        }
+        return soundPlayed;
+    }
+
+    private boolean isEntityToBeSensed(PlayerEntity player, Entity nearbyEntity) {
+        if (nearbyEntity instanceof ArrowEntity) {
+            ArrowEntity arrow = (ArrowEntity) nearbyEntity;
+            return !arrow.isOnGround() && shouldPlaySound(player) && !detectedEntities.contains(arrow);
+        } else {
+            return (nearbyEntity instanceof MobEntity || nearbyEntity instanceof PlayerEntity) &&
+                    !(nearbyEntity instanceof AnimalEntity) &&
+                    shouldPlaySound(player) &&
+                    !detectedEntities.contains(nearbyEntity);
+        }
+    }
+
+    private void playSoundAtEntityPosition(PlayerEntity player, Entity nearbyEntity) {
+        Vec3d entitySoundPos = nearbyEntity.getPos().add(0, nearbyEntity.getStandingEyeHeight() / 2, 0);
+        player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(),
+                SoundEvents.BLOCK_BELL_RESONATE, SoundCategory.MASTER, 1F, 1F, false);
     }
 
     private boolean shouldPlaySound(PlayerEntity player) {
@@ -54,6 +87,6 @@ public class SpiderSense implements ModInitializer {
             return true;
         }
         long lastPlayedTime = playersWithSounds.get(player);
-        return System.currentTimeMillis() - lastPlayedTime > 1000;
+        return System.currentTimeMillis() - lastPlayedTime > 300;
     }
 }
