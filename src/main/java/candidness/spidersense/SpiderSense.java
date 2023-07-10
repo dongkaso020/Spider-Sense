@@ -5,6 +5,8 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.passive.AnimalEntity;
+import net.minecraft.entity.passive.BatEntity;
+import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ArrowEntity;
 import net.minecraft.sound.SoundCategory;
@@ -71,6 +73,8 @@ public class SpiderSense implements ModInitializer {
         } else {
             return (nearbyEntity instanceof MobEntity || nearbyEntity instanceof PlayerEntity) &&
                     !(nearbyEntity instanceof AnimalEntity) &&
+                    !(nearbyEntity instanceof BatEntity) &&
+                    !(nearbyEntity instanceof VillagerEntity) &&
                     shouldPlaySound(player) &&
                     !detectedEntities.contains(nearbyEntity);
         }
