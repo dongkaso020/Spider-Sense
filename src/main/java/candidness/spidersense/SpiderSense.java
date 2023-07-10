@@ -17,7 +17,8 @@ import java.util.Map;
 import java.util.Set;
 
 public class SpiderSense implements ModInitializer {
-    private static final float SOUND_RANGE = 13.0F;
+    private static final float SOUND_RANGE_ENTITY = 10.0F;
+    private static final float SOUND_RANGE_ARROW = 100.0F;
     private final Map<PlayerEntity, Long> playersWithSounds = new HashMap<>();
     private final Set<Entity> detectedEntities = new HashSet<>();
 
@@ -48,7 +49,8 @@ public class SpiderSense implements ModInitializer {
 
     private Set<Entity> findNearbyEntities(PlayerEntity player) {
         Set<Entity> currentDetectedEntities = new HashSet<>();
-        player.getWorld().getOtherEntities(player, player.getBoundingBox().expand(SOUND_RANGE)).forEach(currentDetectedEntities::add);
+        player.getWorld().getOtherEntities(player, player.getBoundingBox().expand(SOUND_RANGE_ENTITY)).forEach(currentDetectedEntities::add);
+        player.getWorld().getOtherEntities(player, player.getBoundingBox().expand(SOUND_RANGE_ARROW)).stream().filter(entity -> entity instanceof ArrowEntity).forEach(currentDetectedEntities::add);
         return currentDetectedEntities;
     }
 
@@ -78,8 +80,13 @@ public class SpiderSense implements ModInitializer {
 
     private void playSoundAtEntityPosition(PlayerEntity player, Entity nearbyEntity) {
         Vec3d entitySoundPos = nearbyEntity.getPos().add(0, nearbyEntity.getStandingEyeHeight() / 2, 0);
-        player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(),
-                SoundEvents.BLOCK_BELL_RESONATE, SoundCategory.MASTER, 1F, 1F, false);
+        if (nearbyEntity instanceof ArrowEntity) {
+            player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(),
+                    SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, SoundCategory.MASTER, 1F, 1F, false);
+        } else {
+            player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(),
+                    SoundEvents.BLOCK_BELL_RESONATE, SoundCategory.MASTER, 1F, 1F, false);
+        }
     }
 
     private boolean shouldPlaySound(PlayerEntity player) {
@@ -87,6 +94,6 @@ public class SpiderSense implements ModInitializer {
             return true;
         }
         long lastPlayedTime = playersWithSounds.get(player);
-        return System.currentTimeMillis() - lastPlayedTime > 300;
+        return System.currentTimeMillis() - lastPlayedTime > 0;
     }
 }
