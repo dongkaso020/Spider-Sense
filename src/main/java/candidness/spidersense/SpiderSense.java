@@ -2,15 +2,17 @@ package candidness.spidersense;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.entity.Entity;
+import net.minecraft.entity.*;
 import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.passive.AnimalEntity;
-import net.minecraft.entity.passive.BatEntity;
-import net.minecraft.entity.passive.VillagerEntity;
+import net.minecraft.entity.passive.*;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ArrowEntity;
+import net.minecraft.registry.Registries;
+import net.minecraft.registry.Registry;
 import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.HashMap;
@@ -19,34 +21,34 @@ import java.util.Map;
 import java.util.Set;
 
 public class SpiderSense implements ModInitializer {
-    private static final float SOUND_RANGE_ENTITY = 10.0F;
+    private static final float SOUND_RANGE_ENTITY = 8.0F;
     private static final float SOUND_RANGE_ARROW = 30.0F;
-    private final Map<PlayerEntity, Long> playersWithSounds = new HashMap<>();
-    private final Set<Entity> detectedEntities = new HashSet<>();
+    private static final int ENTITY_DETECTION_INTERVAL_MS = 20000;
+    private final Map<PlayerEntity, Set<Entity>> detectedEntitiesByPlayer = new HashMap<>();
+    private final Map<Entity, Long> sensedEntitiesWithTimestamps = new HashMap<>();
+
+    public static final Identifier MY_SOUND_ID = new Identifier("spider-sense:my_sound");
+    public static SoundEvent MY_SOUND_EVENT = SoundEvent.of(MY_SOUND_ID);
 
     @Override
     public void onInitialize() {
-        registerSoundEvents();
+        Registry.register(Registries.SOUND_EVENT, SpiderSense.MY_SOUND_ID, MY_SOUND_EVENT);
+        registerClientTickEvent();
     }
 
-    private void registerSoundEvents() {
+    private void registerClientTickEvent() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.world != null && client.player != null) {
-                processPlayerSenseEvents(client.player);
+                processPlayerSensingEvents(client.player);
             }
         });
     }
 
-    private void processPlayerSenseEvents(PlayerEntity player) {
+    private void processPlayerSensingEvents(PlayerEntity player) {
         Set<Entity> currentDetectedEntities = findNearbyEntities(player);
-        boolean soundPlayed = playSoundForDetectedEntities(player, currentDetectedEntities);
+        playSoundForDetectedEntities(player, currentDetectedEntities);
 
-        if (soundPlayed) {
-            playersWithSounds.put(player, System.currentTimeMillis());
-        }
-
-        detectedEntities.clear();
-        detectedEntities.addAll(currentDetectedEntities);
+        detectedEntitiesByPlayer.put(player, currentDetectedEntities);
     }
 
     private Set<Entity> findNearbyEntities(PlayerEntity player) {
@@ -55,47 +57,36 @@ public class SpiderSense implements ModInitializer {
         return currentDetectedEntities;
     }
 
-    private boolean playSoundForDetectedEntities(PlayerEntity player, Set<Entity> currentDetectedEntities) {
-        boolean soundPlayed = false;
+    private void playSoundForDetectedEntities(PlayerEntity player, Set<Entity> currentDetectedEntities) {
         for (Entity nearbyEntity : currentDetectedEntities) {
-            if (isEntityToBeSensed(player, nearbyEntity)) {
+            if (shouldSenseEntity(player, nearbyEntity)) {
                 playSoundAtEntityPosition(player, nearbyEntity);
-                soundPlayed = true;
-                break;
+                sensedEntitiesWithTimestamps.put(nearbyEntity, System.currentTimeMillis());
             }
         }
-        return soundPlayed;
     }
 
-    private boolean isEntityToBeSensed(PlayerEntity player, Entity nearbyEntity) {
+    private boolean shouldSenseEntity(PlayerEntity player, Entity nearbyEntity) {
         if (nearbyEntity instanceof ArrowEntity arrow) {
-            return !arrow.isOnGround() && shouldPlaySound(player) && !detectedEntities.contains(arrow);
+            return !arrow.isOnGround() && isTimeForNextSound(nearbyEntity) && isNotYetDetectedByPlayer(player, arrow);
         } else {
             return (nearbyEntity instanceof MobEntity || nearbyEntity instanceof PlayerEntity) &&
-                    !(nearbyEntity instanceof AnimalEntity) &&
-                    !(nearbyEntity instanceof BatEntity) &&
-                    !(nearbyEntity instanceof VillagerEntity) &&
-                    shouldPlaySound(player) &&
-                    !detectedEntities.contains(nearbyEntity);
+                    !(nearbyEntity instanceof AnimalEntity || nearbyEntity instanceof BatEntity || nearbyEntity instanceof VillagerEntity || nearbyEntity instanceof FishEntity || nearbyEntity instanceof SquidEntity) &&
+                    isTimeForNextSound(nearbyEntity) && isNotYetDetectedByPlayer(player, nearbyEntity);
         }
     }
 
     private void playSoundAtEntityPosition(PlayerEntity player, Entity nearbyEntity) {
         Vec3d entitySoundPos = nearbyEntity.getPos().add(0, nearbyEntity.getStandingEyeHeight() / 2, 0);
-        if (nearbyEntity instanceof ArrowEntity) {
-            player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(),
-                    SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, SoundCategory.MASTER, 1F, 1F, false);
-        } else {
-            player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(),
-                    SoundEvents.BLOCK_BELL_RESONATE, SoundCategory.MASTER, 1F, 1F, true);
-        }
+        SoundEvent soundEvent = nearbyEntity instanceof ArrowEntity ? SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP : SpiderSense.MY_SOUND_EVENT;
+        player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(), soundEvent, SoundCategory.MASTER, 1F, 1F, false);
     }
 
-    private boolean shouldPlaySound(PlayerEntity player) {
-        if (!playersWithSounds.containsKey(player)) {
-            return true;
-        }
-        long lastPlayedTime = playersWithSounds.get(player);
-        return System.currentTimeMillis() - lastPlayedTime > 0;
+    private boolean isTimeForNextSound(Entity entity) {
+        return !sensedEntitiesWithTimestamps.containsKey(entity) || System.currentTimeMillis() - sensedEntitiesWithTimestamps.get(entity) > ENTITY_DETECTION_INTERVAL_MS;
+    }
+
+    private boolean isNotYetDetectedByPlayer(PlayerEntity player, Entity nearbyEntity) {
+        return !detectedEntitiesByPlayer.get(player).contains(nearbyEntity);
     }
 }
