@@ -3,5 +3,10 @@
     "sounds": [
       "spider-sense:my_sound"
     ]
+  },
+  "my_sound_2": {
+    "sounds": [
+      "spider-sense:my_sound_2"
+    ]
   }
 }

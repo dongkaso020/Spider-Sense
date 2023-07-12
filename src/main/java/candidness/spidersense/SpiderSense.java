@@ -2,7 +2,7 @@ package candidness.spidersense;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.entity.*;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.passive.*;
 import net.minecraft.entity.player.PlayerEntity;
@@ -11,7 +11,6 @@ import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 
@@ -22,71 +21,101 @@ import java.util.Set;
 
 public class SpiderSense implements ModInitializer {
     private static final float SOUND_RANGE_ENTITY = 8.0F;
-    private static final float SOUND_RANGE_ARROW = 30.0F;
-    private static final int ENTITY_DETECTION_INTERVAL_MS = 20000;
-    private final Map<PlayerEntity, Set<Entity>> detectedEntitiesByPlayer = new HashMap<>();
-    private final Map<Entity, Long> sensedEntitiesWithTimestamps = new HashMap<>();
-
-    public static final Identifier MY_SOUND_ID = new Identifier("spider-sense:my_sound");
-    public static SoundEvent MY_SOUND_EVENT = SoundEvent.of(MY_SOUND_ID);
+    private static final float SOUND_RANGE_ARROW = 800.0F;
+    private final Map<PlayerEntity, Long> playersWithSounds = new HashMap<>();
+    private final Set<Entity> detectedEntities = new HashSet<>();
+    private final Map<Entity, Long> lastDetectedEntityTime = new HashMap<>(); // Add this hashmap to store entity with timestamp
+    public static final Identifier SPIDER_SENSE_LONG = new Identifier("spider-sense:my_sound");
+    public static SoundEvent SPIDER_SENSE_LONG_EVENT = SoundEvent.of(SPIDER_SENSE_LONG);
+    public static final Identifier SPIDER_SENSE_SHORT = new Identifier("spider-sense:my_sound_2");
+    public static SoundEvent SPIDER_SENSE_SHORT_EVENT = SoundEvent.of(SPIDER_SENSE_SHORT);
 
     @Override
     public void onInitialize() {
-        Registry.register(Registries.SOUND_EVENT, SpiderSense.MY_SOUND_ID, MY_SOUND_EVENT);
-        registerClientTickEvent();
+        Registry.register(Registries.SOUND_EVENT, SpiderSense.SPIDER_SENSE_LONG, SPIDER_SENSE_LONG_EVENT);
+        registerSoundEvents();
+        Registry.register(Registries.SOUND_EVENT, SpiderSense.SPIDER_SENSE_SHORT, SPIDER_SENSE_SHORT_EVENT);
+        registerSoundEvents();
     }
 
-    private void registerClientTickEvent() {
+    private void registerSoundEvents() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.world != null && client.player != null) {
-                processPlayerSensingEvents(client.player);
+                processPlayerSenseEvents(client.player);
             }
         });
     }
-
-    private void processPlayerSensingEvents(PlayerEntity player) {
+    private void processPlayerSenseEvents(PlayerEntity player) {
         Set<Entity> currentDetectedEntities = findNearbyEntities(player);
-        playSoundForDetectedEntities(player, currentDetectedEntities);
+        boolean soundPlayed = playSoundForDetectedEntities(player, currentDetectedEntities);
 
-        detectedEntitiesByPlayer.put(player, currentDetectedEntities);
+        if (soundPlayed) {
+            playersWithSounds.put(player, System.currentTimeMillis());
+        }
+
+        detectedEntities.clear();
+        detectedEntities.addAll(currentDetectedEntities);
     }
-
     private Set<Entity> findNearbyEntities(PlayerEntity player) {
         Set<Entity> currentDetectedEntities = new HashSet<>(player.getWorld().getOtherEntities(player, player.getBoundingBox().expand(SOUND_RANGE_ENTITY)));
         player.getWorld().getOtherEntities(player, player.getBoundingBox().expand(SOUND_RANGE_ARROW)).stream().filter(entity -> entity instanceof ArrowEntity).forEach(currentDetectedEntities::add);
         return currentDetectedEntities;
     }
-
-    private void playSoundForDetectedEntities(PlayerEntity player, Set<Entity> currentDetectedEntities) {
+    private boolean playSoundForDetectedEntities(PlayerEntity player, Set<Entity> currentDetectedEntities) {
+        boolean soundPlayed = false;
         for (Entity nearbyEntity : currentDetectedEntities) {
-            if (shouldSenseEntity(player, nearbyEntity)) {
+            if (isEntityToBeSensed(player, nearbyEntity)) {
                 playSoundAtEntityPosition(player, nearbyEntity);
-                sensedEntitiesWithTimestamps.put(nearbyEntity, System.currentTimeMillis());
+                soundPlayed = true;
+                break;
             }
         }
+        return soundPlayed;
     }
-
-    private boolean shouldSenseEntity(PlayerEntity player, Entity nearbyEntity) {
+    private boolean isEntityToBeSensed(PlayerEntity player, Entity nearbyEntity) {
+        if (isEntityDetectedRecently(nearbyEntity)) {
+            return false;
+        }
         if (nearbyEntity instanceof ArrowEntity arrow) {
-            return !arrow.isOnGround() && isTimeForNextSound(nearbyEntity) && isNotYetDetectedByPlayer(player, arrow);
+            return !arrow.isOnGround() && shouldPlaySound(player) && !detectedEntities.contains(arrow);
         } else {
             return (nearbyEntity instanceof MobEntity || nearbyEntity instanceof PlayerEntity) &&
-                    !(nearbyEntity instanceof AnimalEntity || nearbyEntity instanceof BatEntity || nearbyEntity instanceof VillagerEntity || nearbyEntity instanceof FishEntity || nearbyEntity instanceof SquidEntity) &&
-                    isTimeForNextSound(nearbyEntity) && isNotYetDetectedByPlayer(player, nearbyEntity);
+                    !(nearbyEntity instanceof AnimalEntity) &&
+                    !(nearbyEntity instanceof BatEntity) &&
+                    !(nearbyEntity instanceof VillagerEntity) &&
+                    !(nearbyEntity instanceof SquidEntity) &&
+                    !(nearbyEntity instanceof FishEntity) &&
+                    !(nearbyEntity instanceof AllayEntity) &&
+                    shouldPlaySound(player) &&
+                    !detectedEntities.contains(nearbyEntity);
         }
     }
-
+    private boolean isEntityDetectedRecently(Entity entity) {
+        final long detectionCooldown = 20000;
+        if (lastDetectedEntityTime.containsKey(entity)) {
+            long lastDetectedTime = lastDetectedEntityTime.get(entity);
+            if (System.currentTimeMillis() - lastDetectedTime < detectionCooldown) {
+                return true;
+            }
+        }
+        lastDetectedEntityTime.put(entity, System.currentTimeMillis());
+        return false;
+    }
     private void playSoundAtEntityPosition(PlayerEntity player, Entity nearbyEntity) {
         Vec3d entitySoundPos = nearbyEntity.getPos().add(0, nearbyEntity.getStandingEyeHeight() / 2, 0);
-        SoundEvent soundEvent = nearbyEntity instanceof ArrowEntity ? SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP : SpiderSense.MY_SOUND_EVENT;
-        player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(), soundEvent, SoundCategory.MASTER, 1F, 1F, false);
+        if (nearbyEntity instanceof ArrowEntity) {
+            player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(),
+                    SpiderSense.SPIDER_SENSE_SHORT_EVENT, SoundCategory.MASTER, 1.0F, 1.0F, false);
+        } else {
+            player.getWorld().playSound(entitySoundPos.getX(), entitySoundPos.getY(), entitySoundPos.getZ(),
+                    SpiderSense.SPIDER_SENSE_LONG_EVENT, SoundCategory.MASTER, 1.0F, 1.0F, true);
+        }
     }
-
-    private boolean isTimeForNextSound(Entity entity) {
-        return !sensedEntitiesWithTimestamps.containsKey(entity) || System.currentTimeMillis() - sensedEntitiesWithTimestamps.get(entity) > ENTITY_DETECTION_INTERVAL_MS;
-    }
-
-    private boolean isNotYetDetectedByPlayer(PlayerEntity player, Entity nearbyEntity) {
-        return !detectedEntitiesByPlayer.get(player).contains(nearbyEntity);
+    private boolean shouldPlaySound(PlayerEntity player) {
+        if (!playersWithSounds.containsKey(player)) {
+            return true;
+        }
+        long lastPlayedTime = playersWithSounds.get(player);
+        return System.currentTimeMillis() - lastPlayedTime > 0;
     }
 }
